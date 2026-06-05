@@ -1,214 +1,136 @@
-# Thiết kế: Nền tảng Định danh trên Không gian mạng (MVP)
+# Bản đồ kiến trúc — Nền tảng Định danh trên Không gian mạng (arc42)
 
-**Ngày:** 2026-06-05
-**Trạng thái:** Đã duyệt thiết kế, chờ review spec
+**Ngày:** 2026-06-06
+**Loại tài liệu:** Architecture Overview / Map (theo template arc42). Đây là **bản đồ**, không phải bản build chi tiết.
+**Tài liệu con:** Spec #1 `identity-core` (`2026-06-06-identity-core-design.md`) · Spec #2 `sensitive-data-service` (sẽ chuyển thể từ PDF của team).
 
-## 1. Mục tiêu & phạm vi
+> Phạm vi: mô tả kiến trúc tổng thể của nền tảng và cách phân rã. Chi tiết build nằm ở từng spec con; mỗi spec con đi qua vòng riêng spec → plan → implement.
 
-Xây dựng nền tảng định danh số gồm hai trụ cột bổ sung cho nhau:
+---
 
-- **eKYC** — xác minh "đúng người thật" (đọc giấy tờ, so khớp khuôn mặt, kiểm tra liveness).
-- **IdP/SSO** — quản lý danh tính và đăng nhập một lần theo chuẩn OAuth 2.0 / OpenID Connect.
+## 1. Introduction and Goals
 
-Tầm nhìn dài hạn: phục vụ nhiều đối tượng (doanh nghiệp, người chơi game, người dùng đại chúng, dịch vụ công). Kiến trúc thiết kế tổng quát, nhưng **MVP tập trung một lát cắt**: SSO/IdP nội bộ + eKYC dạng API xác minh.
+Nền tảng định danh số gồm hai trụ cột: **eKYC** (xác minh người thật) và **IdP/SSO** (OAuth 2.0 / OpenID Connect), theo mô hình **multi-tenant** và **tự chủ** (tự viết IdP, không phụ thuộc Keycloak). Là lát cắt auth + tenant + user + kyc + sensitive-data, tái sử dụng house architecture của nền tảng O2O.
 
-### Quyết định cốt lõi
+**Quality goals (ưu tiên cao nhất → thấp):**
+1. **Bảo mật & quyền riêng tư PII** — PII/KYC luôn mã hóa, cô lập theo tenant, không lộ plaintext kể cả khi DB bị tấn công.
+2. **Cô lập multi-tenant** — dữ liệu & khóa giữa các tenant cách ly tuyệt đối, kể cả khi lộ một tenant key.
+3. **Khả năng mở rộng** — stateless, scale ngang; sẵn sàng cho quy mô lớn dù MVP tải vừa.
+4. **Tính sẵn sàng & chịu lỗi** — provider eKYC chậm/lỗi không sập hot path auth.
+5. **Tuân thủ** — Nghị định 13/2023/NĐ-CP; sẵn sàng GDPR/ISO 27001/PCI DSS theo house.
 
-| Yếu tố | Quyết định |
+**Stakeholders:** end user, tenant admin, relying party (app dùng SSO), internal services (O2O), đội vận hành/bảo mật, cơ quan tuân thủ.
+
+## 2. Architecture Constraints
+
+- Backend **Go**; chuẩn **OAuth 2.0 / OpenID Connect**.
+- **Tự viết IdP** (dùng thư viện đã kiểm chứng cho lớp token/crypto, vd `ory/fosite`) — **không Keycloak**.
+- Bám **house style**: DDD/Clean Architecture, Kafka, gRPC + Envoy, K8s, PostgreSQL, Redis (Sentinel), object storage + CDN (Cloudflare/R2), observability OpenTelemetry/SigNoz, CI/CD staged.
+- eKYC qua **adapter nhà cung cấp** (FPT.AI tham chiếu đầu tiên), không tự train model.
+- Tuân thủ Nghị định 13/2023/NĐ-CP.
+
+## 3. Context and Scope
+
+**Business context (actor & hệ ngoài):**
+- *End user* → đăng nhập, eKYC. *Tenant admin* → quản lý tenant, decrypt PII (có quyền). *Relying party* → tích hợp SSO. *Internal service* → fetch dữ liệu nhạy cảm qua `kyc_id`.
+- *Hệ ngoài:* nhà cung cấp eKYC (FPT.AI…), object storage/CDN, KMS/Vault (master key).
+
+**Technical context (giao diện chính):**
+- **OIDC endpoints** (HTTP/REST, per-tenant): `/t/{tenant}/authorize`, `/t/{tenant}/token`, `/t/{tenant}/.well-known/openid-configuration`, JWKS, login/consent UI.
+- **gRPC nội bộ:** `identity-core ↔ sensitive-data-service`; partner-key + IP whitelist.
+- **Kafka:** audit events, encrypted event payload, eKYC async, retry/DLQ.
+- **eKYC provider API** (qua adapter).
+
+## 4. Solution Strategy
+
+- **Nền gọn + trụ cột nhà:** không bung full microservices; topology nhỏ gọn nhưng dùng DDD, Kafka, sharding (nơi cần), DR/CI-CD, CDN, Redis.
+- **Tự viết multi-tenant OIDC** — đây là rủi ro mới lớn nhất (xem §11), chi tiết ở Spec identity-core.
+- **SDS là lõi bảo mật** — service cô lập, mô hình khóa phân cấp (xem §8).
+- **Postgres-first** cho toàn bộ MVP (kể cả audit); Mongo để roadmap.
+- **Scale-ready, defer cái đắt:** stateless + JWT/JWKS + connection pool + rate limit + object storage làm ngay; sharding thật/đa-DC/K8s autoscale/Mongo hoãn tới khi tải cần.
+
+## 5. Building Block View
+
+**Level 1 — topology:**
+```
+                      ┌────────── Envoy / API Gateway ──────────┐
+                      │                                         │
+   OIDC/REST  ┌───────▼────────┐   gRPC (partner-key)  ┌────────▼─────────┐
+  ───────────▶│  identity-core │──────────────────────▶│ sensitive-data-  │
+   (login,    │ (modular,DDD)  │                        │  service (SDS)   │
+    token)    │ auth·tenant·   │                        │ tenant key model │
+              │ user·IAL·admin │                        │ (cô lập, own DB) │
+              └───┬────────┬───┘                        └────────┬─────────┘
+                  │        │ Kafka (audit, events, eKYC async)   │
+        ┌─────────▼──┐  ┌──▼───────────────┐            ┌────────▼────────┐
+        │ PostgreSQL │  │ Redis (Sentinel) │            │ PostgreSQL (SDS │
+        │ + audit    │  │ session/token/   │            │ riêng) + object │
+        │ (partition)│  │ rate-limit/cache │            │ storage (ảnh)   │
+        └────────────┘  └──────────────────┘            └─────────────────┘
+   Workers: sensitive-data-worker (encrypt/retry/DLQ) · audit-worker (Kafka→audit)
+```
+
+**Level 2 — `identity-core` (modular monolith, layering DDD):** module `auth` (OIDC tự viết), `tenant`, `user`, `IAL`, `admin`. Layering domain → application (CQRS) → infrastructure → interfaces. Chi tiết: Spec #1.
+
+**`sensitive-data-service` (SDS):** building block cô lập, mô hình khóa `MASTER_KEY → PLAIN_TENANT_KEY → HKDF derived keys`. Chi tiết: Spec #2 (chuyển thể từ PDF).
+
+## 6. Runtime View (kịch bản chính — tóm tắt)
+
+1. **Đăng nhập multi-tenant + cấp token:** resolve tenant (subdomain) → login (+MFA/passkey) → consent → authorization code → đổi token (ID/access JWT ký bằng khóa của tenant, claim `ial`).
+2. **eKYC → nâng IAL:** user upload giấy tờ/selfie → identity-core gọi SDS (lưu mã hóa) + adapter provider → kết quả → nâng IAL1→IAL2.
+3. **Onboard tenant:** tạo tenant → Tenant Service sinh `PLAIN_TENANT_KEY` (mã hóa bằng MASTER_KEY, lưu `tenant_crypto_keys`) → khởi tạo khóa ký OIDC của tenant.
+4. **Xoay khóa tenant:** policy/force → sinh key version mới (CURRENT), key cũ → ACTIVE (giải mã dữ liệu cũ), background re-encrypt theo batch.
+
+## 7. Deployment View
+
+- Đóng gói **Docker → K8s**; **Envoy** gateway (gRPC nội bộ + REST ngoài).
+- **PostgreSQL** primary + read replica; shard theo `tenant_id` khi cần. **Redis Sentinel**. **Kafka**. **Object storage** (R2/S3) + **CDN**.
+- **DR:** backup + PITR; master-key backup + job re-encrypt; sẵn sàng đa DC/GEO (roadmap).
+- **CI/CD staged:** dev → qc → staging → prelive → live group → live all, kèm rollback (theo house).
+- **Observability:** OpenTelemetry → SigNoz (trace/log/APM), metrics Prometheus.
+
+## 8. Crosscutting Concepts
+
+- **Multi-tenancy:** tenant resolution (subdomain→tenant), cô lập bằng `tenant_id` + **Row-Level Security** (Postgres); sharding theo `tenant_id` cho `sensitive_data`/`audit_log` khi tải cần. (Chi tiết OIDC đa tenant ở Spec #1.)
+- **Security & key model (SDS):** `MASTER_KEY` (Vault) → `PLAIN_TENANT_KEY` (random AES-256, không lưu plaintext) → derived `DATA_KEY`/`HASH_KEY`/`EVENT_MESSAGE_KEY` qua **HKDF-SHA256**; mã hóa **AES-256-GCM** (AEAD); searchable bằng hash suffix; RBAC chỉ fetch theo `kyc_id`. (Chi tiết: Spec #2.)
+- **OIDC & token:** JWT access token ký bất đối xứng, **JWKS + khóa ký theo tenant**, xoay khóa; refresh rotation + reuse-detection; TTL cân bằng 15–30′. (Chi tiết: Spec #1.)
+- **Persistence:** **Postgres-first** — identity + `tenant_crypto_keys` + `sensitive_data` + **audit_log** (append-only, partition theo thời gian, JSONB+GIN, full-text, pgvector). Mongo → roadmap. Truy cập qua **sqlc** + pgxpool.
+- **Resilience:** eKYC đồng bộ nhưng **bao vây** (semaphore + timeout + circuit breaker) để không sập hot path; Kafka retry/DLQ cho xử lý nền.
+- **Audit & non-repudiation:** mọi sự kiện định danh ghi log bất biến; audit chỉ chứa hash/mark, không ciphertext/plaintext.
+
+## 9. Architecture Decisions (ADR — tóm tắt)
+
+- **ADR-001 — Tự viết IdP, không Keycloak.** Sở hữu lớp định danh; dùng thư viện cho token/crypto. Đánh đổi: phải tự làm multi-tenant OIDC (xem §11).
+- **ADR-002 — SDS là service cô lập lõi.** Giá trị bảo mật đến từ cô lập (own DB, private network, partner-key).
+- **ADR-003 — Nền gọn (core modular + SDS cô lập + workers), không full microservices.** Cân bằng tốc độ MVP và đường tiến hóa.
+- **ADR-004 — Postgres-first kể cả audit; Mongo hoãn.** *Deviation có chủ đích* so với house (house dùng Mongo cho audit): một datastore = ít bề mặt bảo mật/vận hành hơn cho MVP; Postgres phủ full-text + pgvector. Rút Mongo ra khi audit cần scale ngang.
+- **ADR-005 — sqlc cho truy cập DB.** SQL tường minh, type-safe, hợp truy vấn nhạy cảm + RLS. (Bun là tùy chọn nhà.)
+- **ADR-006 — JWT access token + JWKS theo tenant.** Giảm tải validate; cô lập tenant ở tầng khóa ký.
+
+## 10. Quality Requirements (cây chất lượng — scenario tiêu biểu)
+
+- **Bảo mật:** DB sensitive bị sao chép → không đọc được nếu thiếu master_key + data_key. Lộ một tenant key → chỉ ảnh hưởng tenant đó, version đó.
+- **Cô lập tenant:** token cấp cho tenant A không bao giờ validate hợp lệ ở tenant B.
+- **Mở rộng:** thêm replica xử lý tăng login/validate mà không sửa kiến trúc.
+- **Sẵn sàng:** provider eKYC timeout → chỉ eKYC suy giảm, đăng nhập vẫn chạy.
+
+## 11. Risks and Technical Debt
+
+- **🔴 RỦI RO LỚN NHẤT — multi-tenant OIDC tự viết.** Trong house, multi-tenant định danh do **Keycloak realms** lo; bỏ Keycloak nhưng giữ multi-tenant nghĩa là tự xây phần này: tenant resolution, issuer/JWKS/khóa ký theo tenant, scope client theo tenant, chống nhầm lẫn token chéo tenant. → Là **tâm điểm Spec identity-core**.
+- Đúng-đắn quản lý khóa (rotation, re-encrypt) — nhạy cảm, cần test kỹ.
+- Hoãn sharding/đa-DC: nợ kỹ thuật có kiểm soát (đã thiết kế `tenant_id` shard key sẵn).
+- Phụ thuộc provider eKYC (đã cô lập qua adapter + circuit breaker).
+
+## 12. Glossary
+
+| Thuật ngữ | Nghĩa |
 |---|---|
-| Backend | Go |
-| Chuẩn IdP | OAuth 2.0 / OpenID Connect |
-| Lõi IdP | Tự viết app, dùng thư viện đã kiểm chứng (`ory/fosite`) cho lớp token/crypto |
-| eKYC engine | Tích hợp nhà cung cấp qua lớp adapter (không tự huấn luyện model) |
-| Kiến trúc | Modular Monolith (một service Go, 4 module nội bộ) |
-| Mô hình định danh | Tập trung (kiểu UAE PASS), KHÔNG theo SSI/phi tập trung |
-| Xác thực | Passkey/FIDO (WebAuthn) + mật khẩu, MFA (TOTP) tùy chọn |
-| Chiến lược token | JWT access token ký bất đối xứng (validate qua JWKS) + refresh token có xoay vòng |
-| Khả năng mở rộng | Service stateless, scale ngang; MVP tải vừa nhưng kiến trúc sẵn sàng cho quy mô lớn |
-| Triển khai | Docker container; Postgres + Redis là dependency |
-
-### Sản phẩm tham khảo (benchmark)
-
-- **UAE PASS** (uaepass.ae) — IdP quốc gia **tập trung**: SSO 15.000+ dịch vụ, sinh trắc, chữ ký số có giá trị pháp lý, Digital Vault, cấp độ định danh. **Đây là mô hình ta theo.**
-- **NDA Key** (ndakey.vn) — mô hình **SSI/phi tập trung**: ví credential trên thiết bị, DID, blockchain (NDAChain), ZKP, Passkey/FIDO, eIDAS 2.0. Tham khảo về Passkey và quyền riêng tư; **không** theo kiến trúc phi tập trung này cho MVP.
-
-### Lý do "tự viết app + thư viện cho lớp token"
-
-Một IdP gồm 4 lớp: (1) crypto/token, (2) giao thức OAuth/OIDC, (3) nghiệp vụ, (4) UI/tích hợp. Lớp 1–2 là nơi 90% lỗ hổng nằm, đã chuẩn hóa toàn cầu, không tạo lợi thế cạnh tranh → dùng thư viện đã kiểm chứng. Lớp 3–4 là giá trị riêng → tự viết, làm chủ hoàn toàn. Tự hand-roll crypto token là anti-pattern bảo mật kinh điển.
-
-## 2. Kiến trúc tổng thể
-
-Modular Monolith: một binary Go, 4 module nội bộ với ranh giới rõ, giao tiếp qua interface (không gọi chéo struct nội bộ). Mỗi module có thể tách thành service riêng sau này mà không viết lại.
-
-```
-┌─────────────────────────────────────────────┐
-│         identity-platform (Go, 1 binary)     │
-│                                              │
-│  ┌────────┐ ┌────────┐ ┌─────────┐ ┌───────┐ │
-│  │  auth  │ │ ekyc   │ │identity │ │ admin │ │
-│  │(fosite)│ │(adapter│ │(profile,│ │(client│ │
-│  │OIDC/   │ │→ FPT/  │ │assurance│ │ mgmt, │ │
-│  │OAuth2  │ │ VNPT)  │ │ level)  │ │ audit)│ │
-│  └────────┘ └────────┘ └─────────┘ └───────┘ │
-│        │         │          │         │      │
-│     ┌──────────────────────────────────────┐ │
-│     │   storage layer (interface)          │ │
-│     └──────────────────────────────────────┘ │
-└──────────────┬──────────────┬────────────────┘
-               │              │
-          PostgreSQL       Redis
-       (users, clients,  (sessions, token
-        verifications,    store, rate limit)
-        audit log)
-```
-
-## 3. Các module
-
-### 3.1 `auth` — Lõi OAuth2/OIDC
-- Dùng `ory/fosite` làm động cơ OAuth/OIDC.
-- Cung cấp: discovery endpoint (`/.well-known/openid-configuration`), authorization code flow + PKCE, refresh token, JWKS endpoint.
-- Trang login & consent (tự viết UI).
-- **Passkey/FIDO (WebAuthn)** — đăng nhập không mật khẩu/sinh trắc, dùng thư viện WebAuthn cho Go (vd `go-webauthn/webauthn`). Mật khẩu vẫn hỗ trợ làm phương án dự phòng.
-- MFA tùy chọn (TOTP).
-- **Token:** access token là JWT ký bất đối xứng (RS256/ES256) để relying party tự validate qua JWKS, không gọi ngược về IdP. TTL cân bằng (cỡ 15–30 phút) — đủ ngắn để hạn chế rủi ro thu hồi, đủ dài để không dồn tải refresh. **Refresh token có xoay vòng + phát hiện tái sử dụng** (reuse-detection → thu hồi cả "family"). Denylist khẩn cấp trong Redis chỉ kiểm ở bước refresh.
-- **Xoay khóa ký:** mọi replica ký bằng khóa private dùng chung (từ secret store); JWKS công bố nhiều khóa theo `kid` để xoay khóa không gãy phiên.
-- Nhúng claim `ial` (Identity Assurance Level) vào ID token.
-
-### 3.2 `ekyc` — Xác minh danh tính
-- Định nghĩa interface `Verifier` với các thao tác: đọc giấy tờ (OCR), so khớp khuôn mặt, kiểm tra liveness.
-- Một adapter cụ thể gọi nhà cung cấp bên ngoài. FPT.AI là tích hợp tham chiếu đầu tiên; provider cụ thể là cấu hình, không ràng buộc kiến trúc.
-- Lưu kết quả xác minh (verification record) + mức tin cậy. Ảnh gốc lưu ở object storage (xem §5), không lưu trong DB.
-- **MVP xử lý đồng bộ** (gọi provider trong request). Vì provider chậm/bursty, phải **cô lập đường chậm** để một sự cố provider không làm sập hot path đăng nhập:
-  - Giới hạn đồng thời (semaphore / pool xử lý riêng cho eKYC, tách khỏi pool của auth).
-  - Timeout chặt + circuit breaker khi provider lỗi/chậm kéo dài.
-  - Khi tải thực tăng → chuyển eKYC sang xử lý bất đồng bộ (queue + worker), tách scale độc lập (Phase 2, ranh giới đã sẵn).
-
-### 3.3 `identity` — Hồ sơ & mức định danh
-- Hồ sơ người dùng.
-- **Identity Assurance Level (IAL)**:
-  - IAL1 = tài khoản mới, chỉ email/SĐT.
-  - IAL2 = đã eKYC thành công, xác minh người thật.
-- Liên kết kết quả eKYC vào hồ sơ và nâng mức IAL.
-
-### 3.4 `admin` — Quản trị
-- Quản lý relying party (oauth_clients: client_id/secret, redirect_uri, scope).
-- Xem audit log.
-
-## 4. Luồng dữ liệu chính
-
-### 4.1 Đăng nhập SSO
-App → redirect tới `/authorize` → user login (+MFA nếu bật) → consent → cấp authorization code → app đổi code lấy ID token + access token (chứa claim `ial`).
-
-### 4.2 eKYC
-User đã đăng nhập → upload ảnh giấy tờ + selfie → `ekyc` gọi adapter nhà cung cấp → nhận kết quả → lưu verification record → `identity` nâng lên IAL2 → lần đăng nhập sau, token phản ánh mức mới.
-
-## 5. Lưu trữ & bảo mật dữ liệu
-
-- **PostgreSQL**: `users`, `oauth_clients`, `verifications`, `audit_log`. Truy cập qua connection pool.
-- **Redis**: trạng thái dùng chung giữa các replica — session, authorization code/PKCE, token store của fosite, rate limiting, denylist token, cache cấu hình nóng (oauth_clients/JWKS).
-- **Object storage** (ví dụ S3-compatible): lưu ảnh giấy tờ/selfie thay vì nhồi vào DB; stream upload, xử lý xong xóa ảnh gốc.
-- **PII** (ảnh giấy tờ, số CCCD, khuôn mặt):
-  - Mã hóa khi lưu (envelope encryption).
-  - Ảnh gốc xóa sau khi xác minh xong; chỉ giữ kết quả + hash.
-  - Tuân thủ **Nghị định 13/2023/NĐ-CP** về bảo vệ dữ liệu cá nhân: đồng ý rõ ràng, quyền xóa, nhật ký truy cập.
-- **Audit log**: mọi sự kiện định danh (login, cấp token, eKYC) ghi log bất biến; ghi nhiều và tăng vô hạn nên thiết kế để tách sang kho riêng khi quy mô lớn (xem §9).
-
-## 6. Xử lý lỗi
-
-- Lỗi từ nhà cung cấp eKYC (timeout, ảnh mờ, không khớp) → trả mã lỗi rõ ràng cho client, không nâng IAL, cho phép thử lại có giới hạn (rate limit).
-- Tách lỗi nghiệp vụ (4xx, hiển thị cho user) khỏi lỗi hệ thống (5xx, ghi log + cảnh báo).
-- Adapter eKYC bọc timeout + retry + circuit breaker + giới hạn đồng thời (xem §3.2) để provider chậm/lỗi chỉ làm suy giảm eKYC, không làm sập hot path đăng nhập.
-
-## 7. Chiến lược kiểm thử
-
-- **Unit test** từng module qua interface (mock storage, mock eKYC verifier).
-- **Integration test** luồng OIDC đầy đủ với fosite + Postgres/Redis thật (testcontainers).
-- **eKYC test** dùng mock adapter trả các kịch bản (thành công, không khớp, lỗi provider) — không gọi API thật khi test.
-- Theo TDD: viết test trước cho từng luồng.
-
-## 8. Triển khai
-
-- Đóng gói Docker, chạy container.
-- Postgres + Redis là dependency.
-- Cấu hình qua biến môi trường.
-- Chưa cần Kubernetes cho MVP.
-
-## 9. Khả năng mở rộng & yêu cầu phi chức năng
-
-**Bối cảnh quy mô:** MVP phục vụ SSO nội bộ (tải vừa). Mục này KHÔNG đặt ra con số dung lượng cụ thể; mục tiêu là đảm bảo kiến trúc *không chặn đường* lên quy mô lớn (tầm nhìn B2C/quốc gia) — chọn sẵn những lựa chọn rẻ-mà-mở-đường ngay từ MVP, hoãn hạ tầng đắt cho tới khi tải thực đòi hỏi.
-
-**Nguyên tắc:** hot path (auth/token) phải mỏng + stateless + scale ngang; đường chậm (eKYC) phải bị cô lập.
-
-**Làm ngay trong MVP (rẻ, mở đường scale):**
-- Service hoàn toàn stateless — mọi trạng thái ra Redis; không cần sticky session; chạy N replica sau load balancer L7.
-- JWT access token + JWKS → relying party tự validate, IdP rời khỏi hot path validate.
-- Connection pool tới Postgres.
-- Rate limiting đa tầng (IP/user/client) + metrics/observability cơ bản (p99 theo endpoint, độ bão hòa pool).
-- Object storage cho ảnh eKYC; cô lập đồng thời eKYC (semaphore + circuit breaker).
-- Ranh giới module sạch để tách thành phần khi cần.
-
-**Hoãn tới khi tải đòi hỏi (đắt):**
-- Redis Cluster (MVP: primary + replica là đủ).
-- Read replica Postgres + connection pooler ngoài.
-- Tách worker eKYC bất đồng bộ, scale độc lập (Hướng C).
-- Kho audit log riêng + autoscaling/K8s.
-
-**Lưu ý quan trọng về tải của chính IdP:** JWT chỉ giảm tải *validate token* (RP tự làm), KHÔNG giảm tải *cấp/refresh token* — IdP vẫn nằm trọn trên đường login + refresh. TTL access token càng ngắn thì tần suất refresh càng cao → tải refresh tỉ lệ nghịch với TTL. Vì vậy chọn TTL cân bằng (15–30 phút); reuse-detection của refresh token vừa là thuộc tính bảo mật vừa là yếu tố chi phối lượng ghi store.
-
-*Lựa chọn công cụ cụ thể (pooler, kho audit, hàng đợi…) để dành cho implementation plan.*
-
-## 10. Tech stack & kiến trúc nội bộ
-
-### Kiến trúc nội bộ
-Mỗi module chia 3 lớp, giao tiếp qua interface (ports & adapters "lite"):
-- **handler** (HTTP) → **service** (nghiệp vụ) → **repository** (interface lưu trữ + implementation).
-- Storage và eKYC provider nằm sau interface → dễ mock, dễ thay, dễ test độc lập.
-- Wiring phụ thuộc thủ công trong `main` (idiomatic Go, không dùng framework DI cho MVP).
-
-### Bố cục thư mục
-```
-/cmd/server/main.go        # điểm vào, wiring
-/internal/
-  /auth/                   # OIDC, login, passkey, token, quản lý khóa
-  /ekyc/                   # Verifier interface + adapter provider
-  /identity/               # profile, IAL
-  /admin/                  # client mgmt, audit
-  /platform/               # config, db, redis, objectstore, middleware,
-                           # observability, ratelimit, crypto/keys
-/migrations/               # SQL migrations
-/web/                      # template + static cho trang login/consent
-```
-
-### Thư viện đã chốt
-
-| Mối quan tâm | Lựa chọn |
-|---|---|
-| HTTP router | **chi** |
-| OAuth/OIDC | **ory/fosite** |
-| Passkey/WebAuthn | **go-webauthn/webauthn** |
-| Postgres driver | **jackc/pgx** + pgxpool |
-| Truy vấn DB | **sqlc** (sinh code type-safe từ SQL thuần) |
-| Migration | **goose** |
-| Redis client | **redis/go-redis v9** |
-| Rate limit | **go-redis/redis_rate** (token-bucket trên Redis) |
-| Object storage | **minio-go** / aws-sdk-go-v2 (S3-compatible) |
-| Logging | **log/slog** (stdlib) |
-| Metrics | **prometheus/client_golang** |
-| Tracing | **OpenTelemetry** (bật dần) |
-| Config | **caarlos0/env** (12-factor, biến môi trường) |
-| Validation | **go-playground/validator** |
-| Test | **testing + testify + testcontainers-go**; mock viết tay theo interface |
-
-**Phase 2:** hàng đợi cho eKYC async → **asynq** (Redis) hoặc **river** (Postgres).
-
-## 11. Ngoài phạm vi MVP — Roadmap Phase 2+
-
-Cố tình loại khỏi MVP để giữ trọng tâm vào vòng lặp giá trị chính (SSO an toàn + eKYC + nâng IAL). Ranh giới module được thiết kế sẵn để bổ sung mà không phải viết lại:
-
-- **Chữ ký số** (ký tài liệu có giá trị pháp lý) — cần CA/chứng thư số, tích hợp nhà cung cấp ký số, tuân thủ Luật Giao dịch điện tử 2023. Là một module con đáng kể → Phase 2. Có thể gắn quyền ký với mức IAL cao (như UAE PASS).
-- **SDK cho bên tích hợp** — đường tắt cho relying party; MVP đã dùng được qua thư viện OIDC chuẩn nên chưa cấp thiết.
-- **Kho tài liệu / ví credential** (kiểu Digital Vault) — lưu & chia sẻ chọn lọc giấy tờ đã xác minh.
-- **Định danh người chơi game** (lát cắt B2C/game).
-- **Đa nhà cung cấp eKYC** (định tuyến/đối chiếu nhiều provider).
-- **Tách microservices (Hướng B) / hàng đợi bất đồng bộ (Hướng C)**.
-- **Social login** và **mô hình SSI/DID** (nếu sau này muốn lai với hướng NDA Key).
+| IdP / OIDC | Nhà cung cấp định danh / OpenID Connect |
+| IAL | Identity Assurance Level (IAL1 email/SĐT, IAL2 đã eKYC) |
+| SDS | Sensitive Data Service — service mã hóa PII/KYC |
+| RP | Relying Party — app dùng SSO |
+| JWKS | JSON Web Key Set (khóa công khai để validate token) |
+| HKDF | HMAC-based Key Derivation Function (RFC 5869) |
+| MASTER_KEY / tenant key / data key | Phân cấp khóa của SDS |
+| RLS | Row-Level Security (Postgres) |
+| tenant | Khách thuê (đơn vị cô lập dữ liệu) |
