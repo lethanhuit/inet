@@ -157,7 +157,51 @@ User đã đăng nhập → upload ảnh giấy tờ + selfie → `ekyc` gọi a
 
 *Lựa chọn công cụ cụ thể (pooler, kho audit, hàng đợi…) để dành cho implementation plan.*
 
-## 10. Ngoài phạm vi MVP — Roadmap Phase 2+
+## 10. Tech stack & kiến trúc nội bộ
+
+### Kiến trúc nội bộ
+Mỗi module chia 3 lớp, giao tiếp qua interface (ports & adapters "lite"):
+- **handler** (HTTP) → **service** (nghiệp vụ) → **repository** (interface lưu trữ + implementation).
+- Storage và eKYC provider nằm sau interface → dễ mock, dễ thay, dễ test độc lập.
+- Wiring phụ thuộc thủ công trong `main` (idiomatic Go, không dùng framework DI cho MVP).
+
+### Bố cục thư mục
+```
+/cmd/server/main.go        # điểm vào, wiring
+/internal/
+  /auth/                   # OIDC, login, passkey, token, quản lý khóa
+  /ekyc/                   # Verifier interface + adapter provider
+  /identity/               # profile, IAL
+  /admin/                  # client mgmt, audit
+  /platform/               # config, db, redis, objectstore, middleware,
+                           # observability, ratelimit, crypto/keys
+/migrations/               # SQL migrations
+/web/                      # template + static cho trang login/consent
+```
+
+### Thư viện đã chốt
+
+| Mối quan tâm | Lựa chọn |
+|---|---|
+| HTTP router | **chi** |
+| OAuth/OIDC | **ory/fosite** |
+| Passkey/WebAuthn | **go-webauthn/webauthn** |
+| Postgres driver | **jackc/pgx** + pgxpool |
+| Truy vấn DB | **sqlc** (sinh code type-safe từ SQL thuần) |
+| Migration | **goose** |
+| Redis client | **redis/go-redis v9** |
+| Rate limit | **go-redis/redis_rate** (token-bucket trên Redis) |
+| Object storage | **minio-go** / aws-sdk-go-v2 (S3-compatible) |
+| Logging | **log/slog** (stdlib) |
+| Metrics | **prometheus/client_golang** |
+| Tracing | **OpenTelemetry** (bật dần) |
+| Config | **caarlos0/env** (12-factor, biến môi trường) |
+| Validation | **go-playground/validator** |
+| Test | **testing + testify + testcontainers-go**; mock viết tay theo interface |
+
+**Phase 2:** hàng đợi cho eKYC async → **asynq** (Redis) hoặc **river** (Postgres).
+
+## 11. Ngoài phạm vi MVP — Roadmap Phase 2+
 
 Cố tình loại khỏi MVP để giữ trọng tâm vào vòng lặp giá trị chính (SSO an toàn + eKYC + nâng IAL). Ranh giới module được thiết kế sẵn để bổ sung mà không phải viết lại:
 
