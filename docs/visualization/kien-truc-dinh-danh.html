@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Định danh trên Không gian mạng — Kiến trúc (Mô hình B)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --ink:#e2e8f0; --muted:#94a3b8;
+    --accent:#38bdf8; --accent2:#34d399; --warn:#fbbf24; --danger:#f87171; --violet:#a78bfa;
+    --line:#334155;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.55}
+  header{padding:40px 24px 28px;background:radial-gradient(1200px 300px at 20% -20%,rgba(56,189,248,.25),transparent),
+    radial-gradient(1000px 260px at 90% -30%,rgba(52,211,153,.18),transparent);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  h1{font-size:30px;margin:0 0 6px}
+  .tag{color:var(--accent);font-weight:600;letter-spacing:.5px}
+  .sub{color:var(--muted);max-width:780px}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    padding:4px 11px;border-radius:999px;font-size:12.5px;margin:4px 6px 0 0}
+  section{padding:34px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:21px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .n{color:var(--accent);font-size:14px;border:1px solid var(--line);border-radius:8px;padding:2px 8px;background:var(--panel)}
+  .lead{color:var(--muted);margin:2px 0 18px}
+  .grid{display:grid;gap:14px}
+  .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:820px){.g3,.g2,.g4{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card h3{margin:0 0 6px;font-size:15.5px}
+  .card p{margin:0;color:var(--muted);font-size:13.5px}
+  .mermaid{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;overflow:auto}
+  .chips span{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:7px 12px;margin:5px 7px 0 0;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--ink);font-weight:600}
+  td.me{color:var(--accent2)} .yes{color:var(--accent2)} .no{color:var(--danger)} .later{color:var(--warn)}
+  .road{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.road{grid-template-columns:1fr}}
+  .road .box{border-radius:14px;padding:16px 18px;border:1px solid var(--line)}
+  .mvp{background:linear-gradient(180deg,rgba(52,211,153,.12),transparent)}
+  .p2{background:linear-gradient(180deg,rgba(251,191,36,.10),transparent)}
+  .road ul{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13.5px}
+  .badge{font-size:12px;padding:2px 9px;border-radius:999px;font-weight:600}
+  .b-green{background:rgba(52,211,153,.18);color:var(--accent2)} .b-amber{background:rgba(251,191,36,.18);color:var(--warn)}
+  footer{padding:26px;color:var(--muted);font-size:12.5px;text-align:center}
+  code{background:var(--panel2);padding:1px 6px;border-radius:6px;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="tag">ĐỊNH DANH TRÊN KHÔNG GIAN MẠNG</div>
+    <h1>Nền tảng eKYC + IdP/SSO — Kiến trúc (Mô hình B)</h1>
+    <p class="sub">Một pool người dùng · nhiều relying party (RP/client) · IdP OIDC tự viết · bảo vệ PII bằng Sensitive Data Service. Mô tả theo arc42.</p>
+    <div>
+      <span class="pill">Một issuer, nhiều RP</span>
+      <span class="pill">Tự viết OIDC (Go)</span>
+      <span class="pill">SDS mã hóa PII</span>
+      <span class="pill">Postgres-first</span>
+      <span class="pill">DDD / Clean Architecture</span>
+      <span class="pill">Kafka · Redis · K8s</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2><span class="n">01</span> Tổng quan</h2>
+    <p class="lead">Ba trụ cột, theo mô hình tập trung (gần UAE PASS), khác hướng SSI/blockchain của NDA Key.</p>
+    <div class="grid g3">
+      <div class="card"><h3>🔐 IdP / SSO</h3><p>OAuth 2.0 / OpenID Connect tự viết. Một issuer, một pool user, nhiều RP/client. Đăng nhập một lần xuyên mọi ứng dụng.</p></div>
+      <div class="card"><h3>🪪 eKYC + IAL</h3><p>Xác minh người thật qua adapter nhà cung cấp (FPT.AI…). Nâng mức định danh IAL1 (email/SĐT) → IAL2 (đã eKYC).</p></div>
+      <div class="card"><h3>🛡️ Sensitive Data Service</h3><p>Service cô lập, mã hóa toàn bộ PII/KYC bằng mô hình khóa phân cấp có version. Điểm khác biệt mạnh nhất.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">02</span> Kiến trúc tổng thể</h2>
+    <p class="lead">Nền gọn: identity-core (modular, DDD) + SDS (cô lập) + workers. Giao tiếp gRPC nội bộ, REST/OIDC ra ngoài.</p>
+    <div class="mermaid">
+flowchart TB
+  RP["Relying Parties<br/>(game · app · dịch vụ)"] -->|OIDC code+PKCE| ENVOY["Envoy / API Gateway"]
+  ENVOY -->|REST OIDC| IC["identity-core<br/>auth · user · IAL · admin<br/>(modular, DDD)"]
+  IC -->|gRPC partner-key| SDS["sensitive-data-service (SDS)<br/>mã hóa PII · cô lập"]
+  IC --> PG[("PostgreSQL<br/>+ audit partition")]
+  IC --> REDIS[("Redis Sentinel<br/>session · token · cache")]
+  IC -->|publish| KAFKA[["Kafka"]]
+  IC -->|adapter| EKYC["eKYC provider<br/>(FPT.AI...)"]
+  SDS --> SPG[("PostgreSQL SDS riêng")]
+  SDS --> OBJ[("Object Storage / CDN<br/>ảnh eKYC")]
+  SDS -.->|MASTER_KEY| VAULT["KMS / Vault"]
+  KAFKA --> W1["sensitive-data-worker<br/>encrypt · retry · DLQ"]
+  KAFKA --> W2["audit-worker<br/>→ audit log"]
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">03</span> Luồng đăng nhập OIDC</h2>
+    <p class="lead">Authorization Code + PKCE, một issuer. Token JWT ES256 validate offline qua JWKS.</p>
+    <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as Người dùng
+  participant RP as Relying Party
+  participant IC as identity-core (IdP)
+  RP->>IC: /authorize (client_id, PKCE, state, nonce)
+  IC->>U: Trang login + consent
+  U->>IC: Passkey / mật khẩu + MFA
+  IC-->>RP: authorization code
+  RP->>IC: /token (code + code_verifier)
+  IC-->>RP: ID/Access JWT (ES256, claim ial) + refresh
+  Note over RP,IC: RP validate iss / aud / chữ ký qua JWKS (offline)
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">04</span> Luồng eKYC → nâng IAL</h2>
+    <p class="lead">PII không bao giờ ở identity-core dạng plaintext — chỉ giữ kyc_id + ial.</p>
+    <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as Người dùng
+  participant IC as identity-core
+  participant P as eKYC provider
+  participant S as SDS
+  U->>IC: Upload giấy tờ + selfie
+  IC->>P: Xác minh (OCR + face + liveness)
+  P-->>IC: Kết quả khớp
+  IC->>S: Lưu PII (mã hóa AES-256-GCM)
+  S-->>IC: kyc_id
+  IC->>IC: Nâng IAL1 → IAL2
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">05</span> Mô hình khóa SDS</h2>
+    <p class="lead">MASTER_KEY → DATA_KEY (có version) → khóa dẫn xuất qua HKDF-SHA256. Xoay khóa theo version, blast-radius nhỏ.</p>
+    <div class="mermaid">
+flowchart TB
+  MK["MASTER_KEY<br/>(KMS / Vault)"] --> DK["DATA_KEY (có version)<br/>AES-256, mã hóa bởi MASTER_KEY"]
+  DK --> H{"HKDF-SHA256"}
+  H --> EK["encrypt key<br/>AES-256-GCM → PII"]
+  H --> HK["hash key<br/>searchable suffix (tìm 4 số cuối)"]
+  H --> EM["event message key<br/>mã hóa payload Kafka"]
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">06</span> Tech stack</h2>
+    <p class="lead">Bám house style O2O ở mức convention; Postgres-first, một datastore cho MVP.</p>
+    <div class="chips">
+      <span>Go</span><span>OAuth2 / OIDC</span><span>ory/fosite (token)</span><span>chi (router)</span>
+      <span>DDD + Clean Architecture</span><span>CQRS</span><span>gRPC + Envoy</span>
+      <span>PostgreSQL (+ pgvector)</span><span>sqlc + pgxpool</span><span>goose (migration)</span>
+      <span>Redis Sentinel</span><span>Kafka</span><span>Object Storage / CDN (R2/S3)</span>
+      <span>go-webauthn (Passkey)</span><span>JWT ES256 + JWKS</span>
+      <span>Docker → K8s</span><span>OpenTelemetry / SigNoz</span><span>Prometheus</span>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">07</span> So sánh benchmark</h2>
+    <p class="lead">Plan của ta gần UAE PASS (tập trung, OIDC); NDA Key là hướng SSI/ZKP không chọn.</p>
+    <table>
+      <tr><th>Tiêu chí</th><th>UAE PASS</th><th>NDA Key</th><th>Plan của ta</th></tr>
+      <tr><td>Mô hình</td><td>Tập trung (quốc gia)</td><td>Phi tập trung (SSI/blockchain)</td><td class="me">Tập trung, một pool</td></tr>
+      <tr><td>Giao thức</td><td>OAuth2 / OIDC</td><td>DID + Verifiable Credentials</td><td class="me">OAuth2 / OIDC (tự viết)</td></tr>
+      <tr><td>SSO + eKYC + cấp độ ĐD</td><td class="yes">✅</td><td class="yes">✅</td><td class="yes me">✅</td></tr>
+      <tr><td>Chữ ký số pháp lý</td><td class="yes">✅</td><td class="yes">✅</td><td class="later">⏸ roadmap</td></tr>
+      <tr><td>Kho tài liệu / ví</td><td class="yes">✅ Vault</td><td class="yes">✅ ví</td><td class="later">⏸ roadmap</td></tr>
+      <tr><td>VC + ZKP (chia sẻ chọn lọc)</td><td class="no">✗</td><td class="yes">✅</td><td class="no">✗ (tập trung)</td></tr>
+      <tr><td>Gắn ID quốc gia (VNeID…)</td><td class="yes">✅ Emirates ID</td><td class="yes">✅ did:nda↔VNeID</td><td class="no">✗ <b>cần quyết</b></td></tr>
+      <tr><td>Bảo vệ PII mã hóa</td><td>vault</td><td>ZKP / on-chain</td><td class="yes me">✅ SDS (điểm mạnh)</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">08</span> Roadmap</h2>
+    <div class="road">
+      <div class="box mvp">
+        <span class="badge b-green">MVP — build mỏng</span>
+        <ul>
+          <li>OIDC code+PKCE (một issuer), JWKS + xoay khóa</li>
+          <li>Login + Passkey/FIDO + MFA</li>
+          <li>Token JWT ES256, refresh rotation + reuse-detection</li>
+          <li>eKYC qua provider → IAL1 / IAL2 (gọi SDS)</li>
+          <li>SDS: MASTER_KEY→DATA_KEY(version)→HKDF, AES-256-GCM, searchable hash, RBAC theo kyc_id</li>
+          <li>Đăng ký & quản trị client/RP, user; audit (Postgres)</li>
+          <li>Stateless + Redis + rate limit + object storage</li>
+        </ul>
+      </div>
+      <div class="box p2">
+        <span class="badge b-amber">Phase 2 — đích</span>
+        <ul>
+          <li><b>Tích hợp VNeID</b> (đang cần quyết MVP vs roadmap)</li>
+          <li>Chữ ký số pháp lý (Luật GDĐT 2023)</li>
+          <li>Kho tài liệu / ví credential</li>
+          <li>Verifiable Credentials + ZKP (hướng lai SSI)</li>
+          <li>SDK cho bên tích hợp · social login</li>
+          <li>Sharding thật · đa-DC/GEO · autoscale · MongoDB cho audit</li>
+          <li>Multi-tenant (nếu bán IdP cho tổ chức ngoài)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+<footer>
+  Định danh trên Không gian mạng · arc42 · Mô hình B (một pool, nhiều RP/client) · 2026-06-06<br/>
+  Tài liệu: docs/superpowers/specs/ — bản đồ kiến trúc · spec identity-core · so sánh benchmark
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true,
+    theme:'dark',
+    themeVariables:{
+      primaryColor:'#1e293b', primaryTextColor:'#e2e8f0', primaryBorderColor:'#38bdf8',
+      lineColor:'#64748b', fontSize:'13px', fontFamily:'system-ui,Segoe UI,Roboto,sans-serif'
+    },
+    flowchart:{htmlLabels:true,curve:'basis'}
+  });
+</script>
+</body>
+</html>
