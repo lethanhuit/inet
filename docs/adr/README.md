@@ -23,3 +23,4 @@ Nhật ký các **quyết định kiến trúc** của nền tảng Định danh
 | [0009](0009-ekyc-adapter.md) | eKYC qua adapter nhà cung cấp | Accepted |
 | [0010](0010-go-ddd-clean-arch.md) | Go + DDD/Clean Architecture + chi | Accepted |
 | [0011](0011-trien-khai-k8s-observability.md) | Triển khai Docker→K8s + Envoy + OTel/SigNoz | Accepted |
+| [0012](0012-vneid-trong-mvp.md) | VNeID là nguồn eKYC chính thống trong MVP | Accepted |

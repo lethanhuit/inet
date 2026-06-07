@@ -13,7 +13,7 @@
 
 `identity-core` là IdP/SSO theo OAuth 2.0 / OpenID Connect cho **một tập người dùng duy nhất**; các ứng dụng (game/web/dịch vụ) tích hợp dưới dạng **relying party (client)**. Quản lý hồ sơ user và **mức định danh (IAL)**; gọi SDS để lưu/đọc PII (không tự lưu PII plaintext).
 
-**Phạm vi:** `auth` (OIDC), `user`, `IAL`, `admin` (quản lý client/RP + user + audit).
+**Phạm vi:** `auth` (OIDC), `user`, `ekyc` (xác minh — adapter FPT.AI + **VNeID**), `IAL`, `admin` (quản lý client/RP + user + audit).
 **Ngoài phạm vi:** mã hóa/lưu PII (→ SDS); multi-tenant (→ roadmap nếu sau này bán IdP cho tổ chức ngoài); chữ ký số, SDK, ví.
 
 **Quality goals (ưu tiên):** (1) **OIDC an toàn, đúng chuẩn**; (2) bảo mật token/khóa ký; (3) stateless scale ngang; (4) không sập khi eKYC/SDS chậm.
@@ -49,14 +49,15 @@ Go; OAuth2/OIDC; **tự viết** (thư viện token: `ory/fosite` hoặc tương
 **Module (level 2):**
 - `auth` — OIDC/OAuth flows, login/consent, passkey/MFA, token & khóa ký.
 - `user` — hồ sơ user (một pool), credential, passkey.
-- `IAL` — mức định danh, liên kết kết quả eKYC (gọi SDS).
+- `ekyc` — orchestrate xác minh; **adapter: FPT.AI + VNeID** (cùng `Verifier` interface); gọi SDS lưu PII; trả kết quả + nguồn.
+- `IAL` — mức định danh **gắn năng lực** (như SOP của UAE PASS): IAL1 (email/SĐT) → IAL2 (eKYC provider) → cân nhắc IAL3 (VNeID). Mức IAL **mở khóa** tính năng (vd ký số/chia sẻ ở roadmap).
 - `admin` — đăng ký & quản lý **client/RP**, user, xem audit.
 
 **Bố cục thư mục (Clean Architecture mỗi module):**
 ```
 /cmd/server/main.go
 /internal/
-  /auth/  /user/  /ial/  /admin/
+  /auth/  /user/  /ekyc/  /ial/  /admin/
      domain/        # entities, value objects, aggregates, domain events, repo interfaces
      application/   # use cases (commands/queries CQRS), DTO, ports
      infrastructure/# repo impl (sqlc), redis, kafka, grpc client→SDS
@@ -77,7 +78,7 @@ Go; OAuth2/OIDC; **tự viết** (thư viện token: `ory/fosite` hoặc tương
 
 **6.2 Refresh:** rotation — cấp token mới + xoay refresh; **reuse-detection** → thu hồi family. Denylist khẩn cấp ở Redis (kiểm khi refresh).
 
-**6.3 eKYC → nâng IAL:** user upload → `IAL`/`auth` gọi SDS (lưu mã hóa) + adapter provider → khớp → IAL1→IAL2; token sau phản ánh `ial=2`.
+**6.3 eKYC → nâng IAL:** user upload → `ekyc` gọi **adapter (VNeID hoặc FPT.AI)** + SDS (lưu mã hóa) → khớp → `IAL` nâng mức (provider→IAL2, VNeID→IAL2/3); token sau phản ánh `ial`. VNeID lỗi/không khả dụng → fallback provider.
 
 **6.4 Đăng ký RP/client:** admin tạo client → `client_id`/`secret`, `redirect_uris`, `scopes`. (Không có khái niệm tenant.)
 
@@ -99,14 +100,17 @@ Stateless → N replica sau Envoy; Postgres (primary + replica); Redis Sentinel;
 ### 8.3 Đăng ký & scope client/RP
 - `oauth_clients(client_id, secret_hash, redirect_uris[], scopes[], grant_types[], status)`. Validate redirect_uri + scope theo client. Confidential vs public client (public bắt buộc PKCE).
 
-### 8.4 Session & SSO
+### 8.4 Session, SSO & Single-Logout
 - **Một login session** (cookie trên domain IdP); **SSO xuyên mọi RP** trong pool. Auth code/PKCE/session lưu Redis.
+- **Single-Logout (SLO)**: endpoint `/logout` (OIDC RP-Initiated Logout / back-channel) kết thúc session phía IdP — không chỉ xóa session phía RP (bài học từ UAE PASS).
 
 ### 8.5 Token strategy
 - Access token **JWT** ES256; TTL cân bằng 15–30′. Refresh **rotation + reuse-detection** (thu hồi family). Denylist khẩn cấp ở Redis (kiểm khi refresh). Access token validate offline qua JWKS (IdP rời hot path validate).
 
 ### 8.6 eKYC / IAL & PII
-- IAL1 (email/SĐT) → IAL2 (đã eKYC). eKYC gọi provider qua adapter (timeout + circuit breaker) và SDS để lưu mã hóa. PII **không bao giờ** ở identity-core dạng plaintext; chỉ giữ `kyc_id` + `ial`.
+- **Nguồn xác minh:** module `ekyc` orchestrate qua adapter — **VNeID** (chính thống, MVP) và **FPT.AI** (thương mại, fallback) — cùng `Verifier` interface; bọc timeout + circuit breaker.
+- **IAL gắn năng lực** (như SOP của UAE PASS): IAL1 (email/SĐT) → IAL2 (eKYC provider) → IAL3 (VNeID, cân nhắc). Mức IAL là **điều kiện mở khóa** tính năng cao (ký số, chia sẻ — roadmap).
+- PII **không bao giờ** ở identity-core dạng plaintext; chỉ giữ `kyc_id` + `ial`; PII mã hóa nằm ở SDS.
 
 ### 8.7 RBAC
 - Vai trò: user, operator, viewer, admin. Quyền decrypt PII chỉ admin/role hợp lệ (thực thi ở SDS qua RBAC + `kyc_id`).
@@ -151,4 +155,4 @@ Xem Glossary bản đồ cha. Bổ sung: RP/client = ứng dụng tích hợp SS
 
 ---
 
-**Phạm vi MVP (build mỏng):** OIDC code+PKCE một issuer, login + passkey/MFA, cấp/refresh token (rotation+reuse-detection), IAL1/IAL2 (gọi SDS), đăng ký & quản trị client/user cơ bản, audit. **Hoãn:** sharding thật, đa-DC, autoscale, social login, chữ ký số, **multi-tenant**.
+**Phạm vi MVP (build mỏng):** OIDC code+PKCE một issuer, login + passkey/MFA, **Single-Logout**, cấp/refresh token (rotation+reuse-detection), **eKYC qua VNeID + FPT.AI** → IAL (gắn năng lực, gọi SDS), đăng ký & quản trị client/user, audit. **Hoãn:** sharding thật, đa-DC, autoscale, social login, chữ ký số, ví/VC, **multi-tenant**.

@@ -86,12 +86,12 @@
     <div class="mermaid">
 flowchart TB
   RP["Relying Parties<br/>(game · app · dịch vụ)"] -->|OIDC code+PKCE| ENVOY["Envoy / API Gateway"]
-  ENVOY -->|REST OIDC| IC["identity-core<br/>auth · user · IAL · admin<br/>(modular, DDD)"]
+  ENVOY -->|REST OIDC| IC["identity-core<br/>auth · user · ekyc · IAL · admin<br/>(modular, DDD)"]
   IC -->|gRPC partner-key| SDS["sensitive-data-service (SDS)<br/>mã hóa PII · cô lập"]
   IC --> PG[("PostgreSQL<br/>+ audit partition")]
   IC --> REDIS[("Redis Sentinel<br/>session · token · cache")]
   IC -->|publish| KAFKA[["Kafka"]]
-  IC -->|adapter| EKYC["eKYC provider<br/>(FPT.AI...)"]
+  IC -->|adapter| EKYC["xác minh: VNeID<br/>+ FPT.AI (fallback)"]
   SDS --> SPG[("PostgreSQL SDS riêng")]
   SDS --> OBJ[("Object Storage / CDN<br/>ảnh eKYC")]
   SDS -.->|MASTER_KEY| VAULT["KMS / Vault"]
@@ -187,9 +187,9 @@ flowchart TB
         <span class="badge b-green">MVP — build mỏng</span>
         <ul>
           <li>OIDC code+PKCE (một issuer), JWKS + xoay khóa</li>
-          <li>Login + Passkey/FIDO + MFA</li>
+          <li>Login + Passkey/FIDO + MFA + Single-Logout (SLO)</li>
           <li>Token JWT ES256, refresh rotation + reuse-detection</li>
-          <li>eKYC qua provider → IAL1 / IAL2 (gọi SDS)</li>
+          <li><b>eKYC qua VNeID + FPT.AI</b> → IAL gắn năng lực (gọi SDS)</li>
           <li>SDS: MASTER_KEY→DATA_KEY(version)→HKDF, AES-256-GCM, searchable hash, RBAC theo kyc_id</li>
           <li>Đăng ký & quản trị client/RP, user; audit (Postgres)</li>
           <li>Stateless + Redis + rate limit + object storage</li>
@@ -198,8 +198,7 @@ flowchart TB
       <div class="box p2">
         <span class="badge b-amber">Phase 2 — đích</span>
         <ul>
-          <li><b>Tích hợp VNeID</b> (đang cần quyết MVP vs roadmap)</li>
-          <li>Chữ ký số pháp lý (Luật GDĐT 2023)</li>
+          <li>Chữ ký số pháp lý (Luật GDĐT 2023) — IAL cao mở khóa</li>
           <li>Kho tài liệu / ví credential</li>
           <li>Verifiable Credentials + ZKP (hướng lai SSI)</li>
           <li>SDK cho bên tích hợp · social login</li>
