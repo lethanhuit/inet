@@ -1,5 +1,7 @@
 # So sánh benchmark: UAE PASS · NDA Key · Plan của ta (Mô hình B)
 
+**Tác giả:** Thành Lê Phước
+
 **Ngày:** 2026-06-06
 **Mục đích:** đối chiếu hai dự án mẫu với plan định danh của ta trên 3 trục — **tính năng, công nghệ, giải pháp tổng thể** — để rút bài học & xác định khoảng trống.
 

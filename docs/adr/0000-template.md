@@ -1,5 +1,7 @@
 # ADR-XXXX: <Tiêu đề quyết định>
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Proposed | Accepted | Superseded by ADR-YYYY
 - **Ngày:** YYYY-MM-DD
 

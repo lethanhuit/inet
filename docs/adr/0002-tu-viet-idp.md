@@ -1,5 +1,7 @@
 # ADR-0002: Tự viết IdP, không dùng Keycloak
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

@@ -1,7 +1,10 @@
 # ADR-0004: SDS là service cô lập + mô hình khóa có version
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
+- **Bổ sung bởi:** [ADR-0014](0014-du-an-nha-nuoc-cong-an.md) — MASTER_KEY/HSM đặt **trong nước**, dưới quyền cơ quan; có thể yêu cầu mật mã chuyên dùng **Ban Cơ yếu** theo độ mật.
 
 ## Bối cảnh
 PII/KYC cần được bảo vệ tuyệt đối (NĐ13/2023, GDPR/ISO-ready). Mô hình SDS trong tài liệu house dùng khóa theo tenant. Nền tảng định danh theo Mô hình B (một pool, không tenant — xem ADR-0001) nên cần điều chỉnh mô hình khóa.

@@ -1,5 +1,7 @@
 # ADR-0006: Postgres-first kể cả audit; MongoDB hoãn
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

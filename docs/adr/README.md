@@ -1,5 +1,7 @@
 # Architecture Decision Records (ADR)
 
+**Tác giả:** Thành Lê Phước
+
 Nhật ký các **quyết định kiến trúc** của nền tảng Định danh trên Không gian mạng.
 
 **Quy ước:**
@@ -24,3 +26,6 @@ Nhật ký các **quyết định kiến trúc** của nền tảng Định danh
 | [0010](0010-go-ddd-clean-arch.md) | Go + DDD/Clean Architecture + chi | Accepted |
 | [0011](0011-trien-khai-k8s-observability.md) | Triển khai Docker→K8s + Envoy + OTel/SigNoz | Accepted |
 | [0012](0012-vneid-trong-mvp.md) | VNeID là nguồn eKYC chính thống trong MVP | Accepted |
+| [0013](0013-privacy-selective-disclosure.md) | Privacy & Selective Disclosure (mô hình tập trung) | Accepted |
+| [0014](0014-du-an-nha-nuoc-cong-an.md) | Dự án nhà nước & công an — ràng buộc chủ quyền/tuân thủ (chi phối các ADR khác) | Accepted |
+| [0015](0015-dinh-vi-mandate.md) | Định vị & mandate — Kịch bản B (sản phẩm chủ quyền, tích hợp VNeID) | Accepted |

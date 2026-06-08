@@ -1,5 +1,7 @@
 # ADR-0001: Mô hình một pool (không multi-tenant)
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

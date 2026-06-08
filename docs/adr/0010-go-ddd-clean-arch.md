@@ -1,5 +1,7 @@
 # ADR-0010: Go + DDD/Clean Architecture + chi
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

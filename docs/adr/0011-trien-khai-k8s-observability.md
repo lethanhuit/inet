@@ -1,7 +1,10 @@
 # ADR-0011: Triển khai Docker→K8s + Envoy + OpenTelemetry/SigNoz
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
+- **Bổ sung bởi:** [ADR-0014](0014-du-an-nha-nuoc-cong-an.md) — hạ tầng & object storage/CDN đặt **trong nước/on-prem** (KHÔNG Cloudflare/R2/S3); cấp độ ATTT cao → SOC + kiểm định.
 
 ## Bối cảnh
 Cần chiến lược triển khai, gateway, quan sát — bám house O2O nhưng giữ MVP gọn.

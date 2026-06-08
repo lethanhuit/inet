@@ -1,5 +1,7 @@
 # ADR-0008: Kafka cho messaging / event bus
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

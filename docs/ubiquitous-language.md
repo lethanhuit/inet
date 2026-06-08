@@ -1,5 +1,7 @@
 # Ubiquitous Language — Nền tảng Định danh trên Không gian mạng
 
+**Tác giả:** Thành Lê Phước
+
 **Ngày:** 2026-06-08 · **Loại:** Hợp đồng từ vựng (DDD Ubiquitous Language)
 
 > **Mục đích:** đây KHÔNG phải từ điển bách khoa, mà là **hợp đồng từ vựng**: chốt **một thuật ngữ chuẩn** cho mỗi khái niệm, nêu **đồng nghĩa cần tránh**, và ánh xạ tới **định danh trong code**. Mọi tài liệu, commit, tên hàm/bảng/biến phải dùng đúng từ chuẩn ở đây.
@@ -26,6 +28,7 @@ Những khái niệm dễ gây hiểu nhầm nhất — đã chốt cách gọi.
 | **DATA_KEY (có version)** | Khóa dữ liệu của SDS **đánh version**, KHÔNG khóa-theo-tenant (khác house O2O). | ❌ "tenant key" / "khóa theo tenant" trong dự án này (ADR-0004). |
 | **IAL "gắn năng lực"** | Mức định danh (IAL1/2/3) là **điều kiện mở khóa tính năng** (kiểu SOP của UAE PASS), không chỉ là nhãn. | ❌ Hiểu IAL như "trạng thái hồ sơ" thụ động. |
 | **Issuer (`iss`)** | **Một** issuer cố định cho toàn hệ; mọi token mang `iss` này. | ❌ issuer-per-tenant / issuer-per-client. |
+| **Tiết lộ tối thiểu (centralized)** | "Chứng minh tính đúng mà không lộ dữ liệu gốc" trong mô hình ta = **IdP ký claim dẫn xuất**, KHÔNG phải ZKP. Ranh giới riêng tư là **IdP↔RP** (RP không thấy PII; IdP vẫn thấy). | ❌ Hiểu nhầm là ZKP/SSI; ❌ kỳ vọng "giấu khỏi cả IdP" (đó là roadmap). |
 
 ---
 
@@ -48,6 +51,10 @@ Những khái niệm dễ gây hiểu nhầm nhất — đã chốt cách gọi.
 | **`state` / `nonce`** | `state` chống CSRF; `nonce` chống replay ID token. | | — |
 | **Scope / Claim** | Scope = phạm vi quyền RP xin; Claim = thuộc tính trong token (`sub`, `ial`…). | | `oauth_clients.scopes[]` |
 | **Consent** | Bước user đồng ý cho RP truy cập scope. | | — |
+| **Claim dẫn xuất / Predicate** | Vị từ IdP tính sẵn từ PII rồi ký, thay cho dữ liệu gốc: `age_over_18`, `verified`, `resident_province`. | ❌ Đưa dữ liệu gốc (ngày sinh/CCCD) vào token. | claim `age_over_18` |
+| **Minimal disclosure** | Nguyên tắc chỉ phát claim **tối thiểu** RP cần; mặc định ít nhất. | NĐ13/2023. | — |
+| **Pairwise sub (PPID)** | `subject_type: pairwise` — mỗi RP nhận một `sub` khác cho cùng người → chống RP liên kết. | ❌ public sub dùng chung mọi RP (cho phép tương quan). | `subject_type` |
+| **Selective disclosure / SD-JWT** | Credential ký sẵn, bên trình diện **chọn lộ** từng claim (claim khác là salted-hash). | Near-term; khớp stack JWT/OIDC. | — |
 | **Discovery** | Endpoint công bố cấu hình OIDC. | `/.well-known/openid-configuration`. | — |
 | **UserInfo** | Endpoint trả thuộc tính user theo access token. | `/userinfo`. | — |
 | **Single-Logout (SLO)** | Đăng xuất **kết thúc session phía IdP** (RP-Initiated / back-channel), không chỉ xoá session RP. | Bài học từ UAE PASS. | `/logout` |
@@ -132,6 +139,10 @@ Những khái niệm dễ gây hiểu nhầm nhất — đã chốt cách gọi.
 | **PKI / CA / X.509** | Hạ tầng khóa công khai / tổ chức chứng thực / định dạng chứng thư — cho **chữ ký số pháp lý** (roadmap). | Tích hợp CA được công nhận, **không tự làm CA**. |
 | **PAdES / XAdES / CAdES** | Chuẩn ETSI cho chữ ký số tài liệu PDF/XML/CMS (roadmap). | |
 | **TokenSigner vs DocumentSignature** | Hai khái niệm code tách biệt cho hai nghĩa "chữ ký số" (xem §1). | |
+| **ZKP** (Zero-Knowledge Proof) 🔭 | Chứng minh mệnh đề đúng mà **không lộ dữ liệu gốc, không cần tin trung tâm**. completeness/soundness/zero-knowledge. | Roadmap; mô hình ta dùng claim dẫn xuất + chữ ký thay cho ZKP (xem ADR-0013). |
+| **Predicate proof / Range proof** 🔭 | ZKP cho vị từ (vd tuổi≥18, số trong khoảng) — Bulletproofs/zk-SNARK/zk-STARK. | Roadmap. |
+| **VC / VP** 🔭 | Verifiable Credential / Presentation (W3C) — credential người dùng tự giữ & xuất trình. | Roadmap (ví số/SSI). |
+| **BBS+ / Nullifier** 🔭 | Chữ ký cho selective disclosure + unlinkable / "một người một lần" ẩn danh. | Roadmap. |
 
 ---
 
@@ -178,6 +189,14 @@ Những khái niệm dễ gây hiểu nhầm nhất — đã chốt cách gọi.
 |---|---|
 | **Nghị định 13/2023/NĐ-CP** | Quy định bảo vệ dữ liệu cá nhân (VN) — ràng buộc xử lý PII. |
 | **Luật Giao dịch điện tử 2023** | Cơ sở pháp lý cho chữ ký số/giao dịch điện tử (roadmap chữ ký số). |
+| **Luật An ninh mạng 2018 + NĐ53/2022** | Cơ sở **nội địa hóa & chủ quyền dữ liệu** (lưu trú trong nước). Xem ADR-0014. |
+| **Luật Căn cước 2023** | Cơ sở pháp lý căn cước/định danh điện tử/VNeID/CSDL dân cư (hiệu lực 1/7/2024). |
+| **Đề án 06** | Đề án quốc gia về dữ liệu dân cư + định danh & xác thực điện tử (Bộ Công an chủ trì) — định hướng dự án. |
+| **CSDL quốc gia về dân cư / C06** | Cơ sở dữ liệu dân cư + đơn vị vận hành VNeID (Cục C06, Bộ Công an) — nguồn định danh chính thống. |
+| **Cấp độ ATTT (NĐ85/2016 · TT03/2017 · TCVN 11930)** | Phân loại & bảo đảm an toàn HTTT theo cấp độ 1–5 (dân cư ~cấp 4–5). Xem ADR-0014. |
+| **Ban Cơ yếu Chính phủ** | Cơ quan quản lý mật mã/chữ ký số **chuyên dùng** nhà nước (Luật Cơ yếu 2011) — có thể bắt buộc theo độ mật. |
+| **NEAC / RootCA quốc gia** | Trung tâm Chứng thực điện tử quốc gia (Bộ TT&TT) — chuỗi tin cậy CA công cộng cho chữ ký số. |
+| **Chủ quyền dữ liệu / data residency** | Dữ liệu lưu & xử lý trong lãnh thổ VN, hạ tầng trong nước/on-prem (không cloud nước ngoài). |
 | **GDPR / ISO 27001** | Chuẩn quốc tế về quyền riêng tư / quản lý an toàn thông tin — "ready" theo house. |
 
 ---

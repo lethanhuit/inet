@@ -1,7 +1,10 @@
 # ADR-0005: Chiến lược OIDC & token (JWT ES256 + JWKS)
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
+- **Bổ sung bởi:** [ADR-0014](0014-du-an-nha-nuoc-cong-an.md) — khóa ký đặt trong nước; chữ ký số pháp lý (roadmap) theo **CA quốc gia (NEAC)/Ban Cơ yếu**, không CA nước ngoài.
 
 ## Bối cảnh
 Cần chọn loại token và cách bảo mật luồng OIDC. Hai trục: (1) JWT tự chứa vs opaque + introspection; (2) bảo mật luồng (PKCE, redirect_uri, refresh).

@@ -1,5 +1,7 @@
 # ADR-0003: Topology gọn — core modular + SDS cô lập + workers
 
+**Tác giả:** Thành Lê Phước
+
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-06-07
 

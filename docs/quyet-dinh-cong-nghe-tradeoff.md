@@ -1,5 +1,7 @@
 # Quyết định công nghệ & Tradeoff — Nền tảng Định danh trên Không gian mạng
 
+**Tác giả:** Thành Lê Phước
+
 **Ngày:** 2026-06-08 · **Loại:** So sánh công nghệ toàn stack (cross-stack overview)
 
 > **Nguồn chân lý:** quyết định kiến trúc đầy đủ nằm ở `docs/adr/` (mỗi quyết định một ADR, bất biến). Tài liệu này **chỉ tổng hợp & so sánh** để xem cả stack trong một khung nhìn — khi mâu thuẫn, **ADR thắng**. Từ vựng: xem `docs/ubiquitous-language.md`.
@@ -7,6 +9,8 @@
 ## 0. Cách đọc
 
 Mỗi quyết định trả lời 5 câu: **chọn gì · phương án khác · vì sao chọn · tradeoff chấp nhận · ADR**. Nguyên tắc xuyên suốt: **bám house O2O ở mức convention + dùng chuẩn/thư viện đã kiểm chứng, không hand-roll, không bung quá mức cho MVP.**
+
+> ⚠️ **Ràng buộc chi phối — [ADR-0014](adr/0014-du-an-nha-nuoc-cong-an.md) (dự án nhà nước & công an):** chủ quyền & lưu trú dữ liệu trong nước, **hạ tầng trong nước/on-prem (KHÔNG cloud nước ngoài)**, VNeID/CSDL dân cư bắt buộc, PKI quốc gia (NEAC/Ban Cơ yếu), cấp độ ATTT cao. Mọi lựa chọn dưới đây được đọc **dưới ràng buộc này**.
 
 ---
 
@@ -29,9 +33,10 @@ Mỗi quyết định trả lời 5 câu: **chọn gì · phương án khác · 
 | 13 | Mã hóa PII | **AES-256-GCM + HKDF + envelope** | AES-CBC+HMAC; ChaCha20-Poly1305; GCM-SIV | AEAD một bước; AES-NI nhanh; envelope giới hạn blast-radius | Phải đảm bảo nonce không tái dùng | [0004](adr/0004-sds-va-mo-hinh-khoa.md) |
 | 14 | Băm mật khẩu | **argon2id** | bcrypt; scrypt; PBKDF2 | Thắng Password Hashing Competition; kháng GPU/ASIC + side-channel | Tốn RAM/CPU (cố ý) → cần tinh chỉnh tham số | — |
 | 15 | Passkey | **WebAuthn (`go-webauthn`)** | Chỉ mật khẩu+TOTP | Chống phishing, không mật khẩu; chuẩn FIDO2 | UX onboarding thiết bị; cần fallback | — |
-| 16 | Lưu file | **Object storage (R2/S3) + CDN** | Blob trong Postgres | DB gọn, rẻ, scale ảnh/giấy tờ; CDN phân phối | Thêm hệ lưu trữ + nhất quán | [0011](adr/0011-trien-khai-k8s-observability.md) |
+| 16 | Lưu file | **Object storage + CDN trong nước/on-prem** (cloud nội địa) | ❌ Cloudflare R2/S3 (nước ngoài); blob trong Postgres | **Chủ quyền dữ liệu** (ADR-0014); DB gọn, scale ảnh/giấy tờ | Ít managed service; tự vận hành nhiều hơn | [0011](adr/0011-trien-khai-k8s-observability.md) · [0014](adr/0014-du-an-nha-nuoc-cong-an.md) |
 | 17 | Triển khai | **Docker → K8s + Envoy** | VM/Docker đơn thuần | Scale ngang, nhất quán house, gateway chuẩn | K8s+Envoy là chi phí vận hành (có thể Docker trước) | [0011](adr/0011-trien-khai-k8s-observability.md) |
-| 18 | Observability | **OpenTelemetry → SigNoz + Prometheus** | Datadog; ELK | Chuẩn mở, không khóa nhà cung cấp; khớp house | Tự vận hành stack quan sát | [0011](adr/0011-trien-khai-k8s-observability.md) |
+| 18 | Observability | **OpenTelemetry → SigNoz + Prometheus** | Datadog; ELK | Chuẩn mở, không khóa nhà cung cấp; **tự-host (chủ quyền)**; khớp house | Tự vận hành stack quan sát | [0011](adr/0011-trien-khai-k8s-observability.md) |
+| ⚑ | **Bối cảnh/ràng buộc** | **Dự án nhà nước & công an** | (SaaS thương mại) | Chủ quyền dữ liệu + an ninh quốc gia; **chi phối mọi lớp trên** | Bỏ cloud nước ngoài; cấp phép VNeID; cấp độ ATTT cao | [0014](adr/0014-du-an-nha-nuoc-cong-an.md) |
 
 ---
 
@@ -119,6 +124,7 @@ User hỏi "từ database" → đây là phần được nhấn. House O2O dùng
 | Tự viết IdP | Tự chủ, tùy biến | Gánh đúng-đắn OIDC | `ory/fosite` cho token + integration test luồng |
 | Phụ thuộc provider eKYC/VNeID | Ra MVP nhanh, chính thống | Lệ thuộc bên thứ ba | Adapter `Verifier` + timeout + circuit breaker + fallback |
 | Hoãn K8s autoscale/đa-DC | MVP gọn | Chưa sẵn quy mô cực lớn | Stateless sẵn sàng; bật khi cần (nợ có kiểm soát) |
+| Bỏ cloud nước ngoài (ADR-0014) | Chủ quyền dữ liệu, hợp quy định nhà nước | Mất tiện ích managed (R2/CDN toàn cầu); tự vận hành nhiều hơn | Cloud nội địa + OSS tự-host (Postgres/Redis/Kafka/SigNoz vốn đã chọn) |
 
 ---
 

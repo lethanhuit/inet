@@ -1,5 +1,7 @@
 # Bộ tìm hiểu tính năng: UAE PASS & NDA Key
 
+**Tác giả:** Thành Lê Phước
+
 **Ngày:** 2026-06-07
 **Mục đích:** catalog tính năng chi tiết của hai sản phẩm mẫu để rút bài học & quyết định đưa vào MVP/roadmap. (Bổ trợ cho `docs/superpowers/specs/2026-06-06-so-sanh-benchmark.md`.)
 

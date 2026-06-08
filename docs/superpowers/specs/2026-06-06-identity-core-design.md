@@ -1,5 +1,7 @@
 # Spec #1 — identity-core (arc42)
 
+**Tác giả:** Thành Lê Phước
+
 **Ngày:** 2026-06-06
 **Trạng thái:** Draft (đã chỉnh theo Mô hình B — một pool), chờ review
 **Tài liệu cha:** Bản đồ kiến trúc (`2026-06-05-dinh-danh-khong-gian-mang-design.md`)
@@ -21,6 +23,8 @@
 ## 2. Architecture Constraints
 
 Go; OAuth2/OIDC; **tự viết** (thư viện token: `ory/fosite` hoặc tương đương); DDD/Clean Architecture; PostgreSQL + sqlc + pgxpool; Redis (Sentinel) cho state; gRPC tới SDS; Kafka cho event/audit; OTel/SigNoz.
+
+**Ràng buộc nhà nước (ADR-0014):** hạ tầng & dữ liệu đặt **trong nước/on-prem** (không cloud nước ngoài); **VNeID/CSDL dân cư bắt buộc** (Đề án 06); khóa ký/PKI/chữ ký số theo **CA quốc gia (NEAC)/Ban Cơ yếu**; an toàn HTTT theo cấp độ (NĐ85/2016, TCVN 11930).
 
 ## 3. Context and Scope
 
@@ -84,7 +88,7 @@ Go; OAuth2/OIDC; **tự viết** (thư viện token: `ory/fosite` hoặc tương
 
 ## 7. Deployment View
 
-Stateless → N replica sau Envoy; Postgres (primary + replica); Redis Sentinel; Kafka. Khóa ký private **bọc mã hóa** (Vault/MASTER_KEY). CI/CD staged. OTel/SigNoz.
+Stateless → N replica sau Envoy; Postgres (primary + replica); Redis Sentinel; Kafka. Khóa ký private **bọc mã hóa** (Vault/MASTER_KEY, **đặt trong nước**; cân nhắc HSM/Ban Cơ yếu — ADR-0014). CI/CD staged. OTel/SigNoz. **Toàn bộ hạ tầng đặt trong lãnh thổ VN** (ADR-0014).
 
 ## 8. Crosscutting Concepts — **OIDC AN TOÀN (trọng tâm)**
 
