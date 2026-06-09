@@ -266,7 +266,7 @@ __LIBCSS__
   <main id="content" class="content"></main>
 </div>
 <noscript><p style="padding:2rem;text-align:center">Cần bật JavaScript để hiển thị tài liệu này.</p></noscript>
-<footer class="foot">Sinh tự động từ <code>__RELPATH__</code> · __GENERATED__</footer>
+
 <script id="md-src" type="text/plain">__MDB64__</script>
 __LIBJS__
 <script>__APPJS__</script>
@@ -290,7 +290,7 @@ $IndexTpl = @'
   <input id="q" class="search" placeholder="🔎 Tìm tài liệu, ADR, thuật ngữ…" autocomplete="off">
 </header>
 <main id="grid" class="grid-wrap"></main>
-<footer class="foot">Sinh tự động bằng <code>scripts/build-docs.ps1</code> · __GENERATED__</footer>
+
 <script id="docs-data" type="text/plain">__DOCSJSON__</script>
 <script>__APPJS__</script>
 </body></html>
